@@ -20,12 +20,25 @@ cursor-chat export-all --limit 3
 ### Auto-Sync + Restore
 ```bash
 cursor-chat sync start         # Iniciar daemon (a cada 2min)
-cursor-chat restore            # Restaurar após limpar Cursor
+cursor-chat sync restore       # Restaurar após limpar Cursor
 ```
+
+### Reset Trial Completo (NOVO!)
+```bash
+cursor-chat reset              # Backup → Reset → Restore automático
+cursor-chat reset --no-restore # Apenas reset, sem restaurar
+```
+
+**O que faz:**
+- Faz backup de todos os chats
+- Reseta machine-id e limpa configs do Cursor
+- Restaura chats automaticamente
+- Pronto para usar após abrir Cursor novamente
 
 ### Limpou o Cursor? (trial reset)
 ```bash
 cursor-chat restore            # Restaura TODOS os chats do backup!
+cursor-chat reset              # OU: reset completo automático
 ```
 
 ### Ver por Projeto/Workspace
@@ -39,6 +52,7 @@ Os chats são salvos em `~/.cursor-chat-handler/` e **persistem mesmo após tria
 
 - `cursor-chat sync start` - Inicia backup automático (roda como serviço)
 - `cursor-chat restore` - Restaura chats após limpar dados do Cursor
+- `cursor-chat reset` - Reset completo com backup/restore automático
 
 ## Workflow Recomendado
 
@@ -54,6 +68,9 @@ cursor-chat show <ID> --last 5
 
 # 4. Exportar se precisar
 cursor-chat export -c <ID> -o contexto.md
+
+# 5. Reset trial quando necessário
+cursor-chat reset  # Faz tudo automaticamente!
 ```
 
 ## Notas
@@ -62,3 +79,4 @@ cursor-chat export -c <ID> -o contexto.md
 - `--last N` limita mensagens (evita sobrecarga)
 - Formatos: markdown (padrão), json, table
 - Auto-sync: `cursor-chat sync start` (configura systemd)
+- Reset: `cursor-chat reset` (backup + reset + restore em um comando)

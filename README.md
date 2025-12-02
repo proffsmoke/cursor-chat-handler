@@ -20,8 +20,8 @@ cursor-chat quick           # Menu rápido
 cursor-chat open 1          # Abrir última conversa
 cursor-chat sync start      # Iniciar auto-backup (a cada 2min)
 
-# LIMPOU O CURSOR? Restaura tudo:
-cursor-chat restore
+# RESET TRIAL? Restaura tudo automaticamente:
+cursor-chat reset          # Backup → Reset → Restore automático
 ```
 
 ## Guia Rápido para IA
@@ -43,6 +43,10 @@ cursor-chat restore
   cursor-chat sync status        # Ver status
   cursor-chat sync now           # Forçar sync
 
+🔥 RESET TRIAL (backup → reset → restore):
+  cursor-chat reset              # Reset completo automático
+  cursor-chat reset --no-restore # Apenas reset, sem restaurar
+
 📁 VER POR PROJETO/WORKSPACE:
   cursor-chat storage workspaces  # Listar projetos
   cursor-chat list -w <projeto>   # Filtrar por projeto
@@ -59,7 +63,7 @@ O sistema mantém backup dos seus chats e restaura automaticamente após reset:
 cursor-chat sync start      # Iniciar daemon (systemd)
 cursor-chat sync stop       # Parar
 cursor-chat sync status     # Ver status
-cursor-chat restore         # Restaurar após limpar Cursor
+cursor-chat sync restore    # Restaurar após limpar Cursor
 ```
 
 **Recursos:**
@@ -69,9 +73,29 @@ cursor-chat restore         # Restaurar após limpar Cursor
 - Limite de 10GB configurável
 - Organiza por projeto/workspace
 
+## Reset Trial Completo
+
+**NOVO!** Reset completo do Cursor com backup e restore automático:
+
+```bash
+cursor-chat reset                    # Reset completo (backup → reset → restore)
+cursor-chat reset --no-restore       # Apenas reset, sem restaurar
+cursor-chat reset --clean-appimage   # Também limpa AppImages do Downloads
+```
+
+**O que faz:**
+1. **Backup** - Sincroniza todos os chats antes do reset
+2. **Kill Cursor** - Para todos os processos
+3. **Limpa configs** - Remove `~/.config/Cursor`, `~/.cache/Cursor`, etc.
+4. **Limpa desktop entries** - Remove ícones e atalhos
+5. **Reset machine-id** - Gera novo ID (requer sudo)
+6. **Restore automático** - Restaura todos os chats do backup
+
+**Após reset:** Abra o Cursor novamente e seus chats estarão lá!
+
 ## Restore Manual
 
-Limpou os dados do Cursor (trial reset)? Restaure tudo:
+Limpou os dados do Cursor manualmente? Restaure tudo:
 
 ```bash
 cursor-chat restore              # Restaurar todos os chats
