@@ -1,0 +1,80 @@
+---
+title: "[RUST] Backend Rust — cursor-chat-handler"
+ruleType: "always"
+priority: 970
+globs:
+  - "src/**/*.rs"
+  - "Cargo.toml"
+  - "Cargo.lock"
+---
+
+# Regras para cursor-chat-handler (Rust)
+
+## TL;DR
+- Clean architecture: domain/application/infrastructure/cli layers
+- Siga `global-contracts.mdc` para erros e contratos
+- Sem `unwrap`/`expect` em produção; use `Result` e `?`
+- Arquivos max ~300 linhas; funções focadas e testáveis
+- `cargo clippy` e `cargo fmt` limpos obrigatório
+
+## 1) Camadas e Responsabilidades
+
+```
+src/
+├── domain/         # Regras de negócio puras (sem I/O)
+│   ├── models.rs   # Conversation, Bubble, SyncState
+│   ├── error.rs    # AppError tipado
+│   └── sync.rs     # Config, BackupMetadata
+├── application/    # Casos de uso e orquestração
+│   ├── extractor.rs
+│   ├── sync_service.rs
+│   └── storage_manager.rs
+├── infrastructure/ # Adapters (DB, FS, systemd)
+│   ├── sqlite_reader.rs
+│   ├── local_storage.rs
+│   └── systemd.rs
+└── cli/            # Interface de linha de comando
+    └── mod.rs
+```
+
+## 2) Tratamento de Erros
+
+- Use `AppError` tipado com `thiserror`
+- Propague erros com `?`, nunca `unwrap` em produção
+- Logs estruturados com `tracing` (info/warn/error)
+- Não exponha stack traces para usuário final
+
+```rust
+// Bom
+fn sync() -> Result<()> {
+    let data = fetch_data()?;
+    process(data)?;
+    Ok(())
+}
+
+// Ruim
+fn sync() {
+    let data = fetch_data().unwrap(); // Pânico!
+}
+```
+
+## 3) I/O e Recursos
+
+- Todo I/O na camada `infrastructure`
+- SQLite com flags read-only quando apropriado
+- Timeouts explícitos para operações longas
+- File locks para evitar race conditions
+
+## 4) Qualidade de Código
+
+- `cargo fmt` antes de commit
+- `cargo clippy -D warnings` sem warnings
+- Testes unitários no domínio
+- Documentação com `///` para funções públicas
+
+## 5) Limites de Engenharia
+
+- Arquivos: idealmente ≤ 300 linhas
+- Funções: responsabilidade única
+- Evite `Any` e `Box<dyn Error>` genéricos
+- Prefira structs tipadas a `HashMap<String, Value>`

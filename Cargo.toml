@@ -3,7 +3,7 @@ name = "cursor-chat-handler"
 version = "0.1.0"
 edition = "2021"
 description = "CLI tool to extract and display Cursor IDE chat history"
-authors = ["proff"]
+authors = []
 license = "MIT"
 
 [dependencies]
@@ -37,6 +37,7 @@ dirs = "6.0"
 # Output formatting
 colored = "3.0"
 comfy-table = "7.1"
+toml = "0.9.8"
 
 [profile.release]
 lto = true
@@ -52,3 +53,6 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
+
+[dev-dependencies]
+tempfile = "3.23.0"

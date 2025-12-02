@@ -1,89 +1,64 @@
-# 🎯 Guia Rápido: Cursor Chat Handler para IA
+# Guia para IA - Cursor Chat Handler
 
-## 🚀 Comandos Essenciais (Copie e Cole)
+> Execute `cursor-chat --help` para ver este guia completo
 
-### ⚡ ACESSO ULTRA-RÁPIDO (Profissional):
+## Comandos Essenciais
+
+### Recuperar Contexto de Chat Anterior
 ```bash
-cursor-chat quick          # Menu numerado para seleção instantânea
-cursor-chat open 1         # Abrir primeira conversa diretamente
-cursor-chat open abc123    # Abrir por ID (parcial funciona)
+cursor-chat quick              # Menu com números
+cursor-chat open 1             # Abrir última conversa
+cursor-chat show <ID> --last 10  # Ver últimas 10 msgs
 ```
 
-### 📋 Ver todos os chats disponíveis:
+### Salvar Contexto Atual
 ```bash
-cursor-chat list
+cursor-chat export -c <ID> -o chat.md
+cursor-chat export-all --limit 3
 ```
 
-### 🔍 Ver últimas mensagens de um chat específico:
+### Auto-Sync + Restore
 ```bash
-cursor-chat show <ID_DO_CHAT> --last 5
+cursor-chat sync start         # Iniciar daemon (a cada 2min)
+cursor-chat restore            # Restaurar após limpar Cursor
 ```
 
-### 💾 Salvar chat atual para continuar depois:
+### Limpou o Cursor? (trial reset)
 ```bash
-cursor-chat export -c <ID_DO_CHAT> -o contexto_atual.md
+cursor-chat restore            # Restaura TODOS os chats do backup!
 ```
 
-### 📤 Exportar múltiplos chats automaticamente:
+### Ver por Projeto/Workspace
 ```bash
-cursor-chat export-all --limit 3 --dir ./chats-salvos
+cursor-chat storage workspaces  # Listar projetos
 ```
 
-## 💡 Como usar com Cursor/IA:
+## Dica Principal
 
-### 🚀 MÉTODO ULTRA-RÁPIDO (Profissional):
-1. **Menu instantâneo:**
-   - Execute: `cursor-chat quick`
-   - Veja lista numerada dos chats
+Os chats são salvos em `~/.cursor-chat-handler/` e **persistem mesmo após trial reset**.
 
-2. **Abra diretamente:**
-   - Execute: `cursor-chat open 1` (número da conversa)
-   - Veja últimas 10 mensagens automaticamente
+- `cursor-chat sync start` - Inicia backup automático (roda como serviço)
+- `cursor-chat restore` - Restaura chats após limpar dados do Cursor
 
-3. **Salve tudo:**
-   - Execute: `cursor-chat export-all --limit 3 --dir ./backup`
+## Workflow Recomendado
 
-### 📝 MÉTODO COMPLETO (Desenvolvimento):
-1. **Identifique o chat atual:**
-   - Execute: `cursor-chat list`
-   - Copie o ID do chat que você quer salvar
-
-2. **Salve o contexto:**
-   - Execute: `cursor-chat export -c <ID_AQUI> -o contexto.md`
-   - Agora você tem o histórico salvo
-
-3. **Continue de onde parou:**
-   - Execute: `cursor-chat show <ID_AQUI> --last 10`
-   - Veja as últimas 10 mensagens para relembrar
-
-## 🎯 Workflow Recomendado:
-
-```
+```bash
 # 1. Ver chats disponíveis
-cursor-chat list
+cursor-chat quick
 
-# 2. Salvar contexto atual
-cursor-chat export -c abc123 -o projeto_atual.md
+# 2. Abrir chat anterior por número
+cursor-chat open 1
 
-# 3. Continuar trabalhando...
-# (faça seu trabalho no Cursor)
+# 3. Ver últimas mensagens
+cursor-chat show <ID> --last 5
 
-# 4. Recuperar contexto quando necessário
-cursor-chat show abc123 --last 5
+# 4. Exportar se precisar
+cursor-chat export -c <ID> -o contexto.md
 ```
 
-## 📝 Notas Importantes:
+## Notas
 
-- **IDs parciais funcionam** - use apenas os primeiros 8 caracteres
-- **Títulos são auto-gerados** do conteúdo do chat
-- **--last N** limita para últimas N mensagens (evita sobrecarga)
-- **Formatos**: markdown (padrão), json, ou table
-- **Funciona sempre** - alias configurado permanentemente
-
-## 🤖 Exemplo de uso com IA:
-
-> "Estou trabalhando em um projeto Rust e preciso salvar o contexto atual. Execute: `cursor-chat export -c <ID_DO_CHAT_ATUAL> -o contexto_rust.md`"
-
----
-
-**Alias configurado:** `cursor-chat` funciona em qualquer diretório após reiniciar o terminal.
+- IDs parciais funcionam (primeiros 8 caracteres)
+- `--last N` limita mensagens (evita sobrecarga)
+- Formatos: markdown (padrão), json, table
+- Auto-sync: `cursor-chat sync start` (configura systemd)

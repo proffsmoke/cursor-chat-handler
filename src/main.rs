@@ -9,7 +9,7 @@
 //!   cursor-chat list                    # See all available chats
 //!   cursor-chat show <id> --last 5      # View last 5 messages from chat
 //!   cursor-chat export -c <id> -o file  # Save chat for later reference
-//!   cursor-chat export-all --limit 3    # Export recent chats with auto names
+//!   cursor-chat sync start              # Start auto-sync daemon
 
 mod application;
 mod cli;
@@ -17,6 +17,7 @@ mod domain;
 mod infrastructure;
 
 use std::io::Write;
+use std::time::Duration;
 
 use clap::Parser;
 use colored::Colorize;
@@ -25,9 +26,11 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use application::{
     extract_all_conversations, format_conversation_markdown, format_conversations_json,
     format_conversations_table, format_stats, ExtractOptions, OutputFormat,
+    RestoreService, StorageManager, SyncService,
 };
-use cli::{Cli, Commands};
-use infrastructure::find_state_databases;
+use cli::{Cli, Commands, StorageCommands, SyncCommands};
+use domain::AppConfig;
+use infrastructure::{find_state_databases, SystemdService};
 
 fn main() {
     let cli = Cli::parse();
@@ -51,8 +54,9 @@ fn run(cli: Cli) -> domain::Result<()> {
         Commands::List {
             limit,
             min_messages,
+            workspace,
         } => {
-            cmd_list(limit, min_messages)?;
+            cmd_list(limit, min_messages, workspace.as_deref())?;
         }
         Commands::Show {
             conversation_id,
@@ -92,13 +96,25 @@ fn run(cli: Cli) -> domain::Result<()> {
         Commands::Open { id } => {
             cmd_open(&id)?;
         }
+        Commands::Sync(sync_cmd) => {
+            cmd_sync(sync_cmd)?;
+        }
+        Commands::Storage(storage_cmd) => {
+            cmd_storage(storage_cmd)?;
+        }
+        Commands::Daemon { interval } => {
+            cmd_daemon(interval)?;
+        }
+        Commands::Restore { ids, force } => {
+            cmd_restore(&ids, force)?;
+        }
     }
 
     Ok(())
 }
 
 /// List conversations command.
-fn cmd_list(limit: usize, min_messages: usize) -> domain::Result<()> {
+fn cmd_list(limit: usize, min_messages: usize, _workspace: Option<&str>) -> domain::Result<()> {
     let options = ExtractOptions {
         min_messages,
         ..Default::default()
@@ -411,6 +427,290 @@ fn cmd_open(id_or_number: &str) -> domain::Result<()> {
     );
 
     Ok(())
+}
+
+/// Handle sync subcommands.
+fn cmd_sync(cmd: SyncCommands) -> domain::Result<()> {
+    let config = AppConfig::default();
+    let systemd = SystemdService::new(config.clone());
+
+    match cmd {
+        SyncCommands::Start => {
+            println!("{}", "🚀 Installing sync service...".bold());
+
+            // Ensure directories exist
+            let storage_mgr = StorageManager::new(config.clone());
+            storage_mgr.ensure_directories()?;
+
+            // Install and start service
+            let result = systemd.install()?;
+            println!("  {} Service file: {}", "✓".green(), result.service_path.display());
+
+            systemd.enable_and_start()?;
+            println!("  {} Service enabled and started", "✓".green());
+
+            println!();
+            println!("Sync daemon is now running! Check status with:");
+            println!("  cursor-chat sync status");
+        }
+        SyncCommands::Stop => {
+            println!("{}", "⏹️  Stopping sync service...".bold());
+            systemd.stop_and_disable()?;
+            println!("  {} Service stopped and disabled", "✓".green());
+        }
+        SyncCommands::Status => {
+            let status = systemd.get_status()?;
+
+            println!("{}", "📊 Sync Service Status".bold());
+            println!();
+            println!("  Installed: {}", if status.is_installed { "Yes".green() } else { "No".red() });
+            println!("  Enabled:   {}", if status.is_enabled { "Yes".green() } else { "No".yellow() });
+            println!("  Running:   {}", if status.is_running { "Yes".green() } else { "No".red() });
+            println!();
+
+            if status.is_installed {
+                // Show sync state
+                let sync_service = SyncService::new(config)?;
+                let state = sync_service.get_state()?;
+
+                println!("  Last sync:      {}", state.last_sync
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| "Never".to_string()));
+                println!("  Conversations:  {}", state.conversation_count);
+                println!("  Messages:       {}", state.message_count);
+
+                if let Some(err) = &state.last_error {
+                    println!("  Last error:     {}", err.red());
+                }
+            }
+        }
+        SyncCommands::Now => {
+            println!("{}", "🔄 Running sync...".bold());
+
+            let sync_service = SyncService::new(config)?;
+            let state = sync_service.sync()?;
+
+            println!();
+            println!("  {} Sync completed!", "✓".green());
+            println!("  Conversations: {}", state.conversation_count);
+            println!("  Messages:      {}", state.message_count);
+        }
+        SyncCommands::Logs { lines } => {
+            let logs = systemd.view_logs(lines)?;
+            println!("{}", logs);
+        }
+        SyncCommands::Uninstall => {
+            println!("{}", "🗑️  Uninstalling sync service...".bold());
+            systemd.uninstall()?;
+            println!("  {} Service uninstalled", "✓".green());
+        }
+        SyncCommands::Restore { ids, force } => {
+            use application::RestoreService;
+
+            println!("{}", "🔄 Restoring chats to Cursor...".bold());
+
+            let restore_service = RestoreService::new(config);
+
+            // Check if restore is needed
+            if !force {
+                if !restore_service.needs_restore()? {
+                    println!("  {} Cursor database looks fine, no restore needed", "ℹ️".blue());
+                    println!("  Use --force to restore anyway");
+                    return Ok(());
+                }
+            }
+
+            // Perform restore
+            let result = if ids.is_empty() {
+                restore_service.restore_all()?
+            } else {
+                restore_service.restore_by_ids(&ids)?
+            };
+
+            println!();
+            println!("  {} Restore completed!", "✓".green());
+            println!("  Conversations: {}", result.restored_conversations);
+            println!("  Messages:      {}", result.restored_messages);
+            println!();
+            println!("  Database: {}", result.cursor_db_path.display());
+            println!();
+            println!("  {} Restart Cursor to see restored chats", "💡".bold());
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle storage subcommands.
+fn cmd_storage(cmd: StorageCommands) -> domain::Result<()> {
+    let config = AppConfig::default();
+    let storage_mgr = StorageManager::new(config.clone());
+
+    match cmd {
+        StorageCommands::Stats => {
+            storage_mgr.ensure_directories()?;
+            let summary = storage_mgr.get_summary()?;
+
+            println!("{}", "💾 Storage Statistics".bold());
+            println!();
+            println!("  Total used:     {} / {} ({:.1}%)",
+                summary.total_human(),
+                summary.max_human(),
+                summary.usage_percent);
+            println!();
+            println!("  Database:       {}", summary.db_human());
+            println!("  Exports:        {}", summary.exports_human());
+            println!("  Backups:        {} ({} files)", summary.backups_human(), summary.backup_count);
+            println!();
+            println!("  Data directory: {}", config.data_dir().display());
+        }
+        StorageCommands::Cleanup => {
+            println!("{}", "🧹 Running cleanup...".bold());
+
+            let result = storage_mgr.enforce_storage_limit()?;
+
+            if result.deleted_count > 0 {
+                println!("  {} Deleted {} files, freed {}",
+                    "✓".green(),
+                    result.deleted_count,
+                    result.freed_human());
+            } else {
+                println!("  {} Nothing to clean up", "✓".green());
+            }
+        }
+        StorageCommands::Workspaces => {
+            let sync_service = SyncService::new(config)?;
+            let workspaces = sync_service.get_workspaces()?;
+
+            println!("{}", "📁 Workspaces".bold());
+            println!();
+
+            if workspaces.is_empty() {
+                println!("  No workspaces found. Run 'cursor-chat sync now' first.");
+            } else {
+                for ws in &workspaces {
+                    let path = ws.path.as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "(unknown)".to_string());
+                    println!("  {} → {}", ws.name.cyan(), path);
+                }
+            }
+        }
+        StorageCommands::Config => {
+            println!("{}", "⚙️  Storage Configuration".bold());
+            println!();
+            println!("  Max storage:       {} GB", config.storage.max_size_gb);
+            println!("  Backup retention:  {} days", config.storage.backup_retention_days);
+            println!("  Sync interval:     {} seconds", config.sync.interval_secs);
+            println!("  Sync enabled:      {}", config.sync.enabled);
+            println!();
+            println!("  Data directory:    {}", config.data_dir().display());
+            println!("  Config file:       {}", config.config_file_path().display());
+        }
+    }
+
+    Ok(())
+}
+
+/// Restore chat history to Cursor.
+fn cmd_restore(ids: &[String], force: bool) -> domain::Result<()> {
+    let config = AppConfig::default();
+    let restore_service = RestoreService::new(config);
+
+    println!("{}", "🔄 Checking restore status...".bold());
+
+    // Check if restore is needed
+    let cursor_empty = restore_service.cursor_is_empty()?;
+    let needs_restore = restore_service.needs_restore()?;
+
+    if !cursor_empty && !needs_restore && !force {
+        println!();
+        println!("  {} Cursor has chats - restore not needed", "ℹ".blue());
+        println!();
+        println!("  Use --force to restore anyway");
+        return Ok(());
+    }
+
+    if cursor_empty {
+        println!("  {} Cursor database is empty", "!".yellow());
+    } else if needs_restore {
+        println!("  {} Cursor appears to have been reset", "!".yellow());
+    }
+
+    println!();
+    println!("{}", "📥 Restoring chats from backup...".bold());
+
+    let result = if ids.is_empty() {
+        restore_service.restore_all()?
+    } else {
+        restore_service.restore_by_ids(ids)?
+    };
+
+    println!();
+    println!("  {} Restore completed!", "✓".green());
+    println!("  Conversations: {}", result.restored_conversations);
+    println!("  Messages:      {}", result.restored_messages);
+    println!();
+    println!("  Cursor DB: {}", result.cursor_db_path.display());
+    println!();
+    println!("{}", "💡 Reinicie o Cursor para ver os chats restaurados".cyan());
+
+    Ok(())
+}
+
+/// Run as daemon (background sync service).
+fn cmd_daemon(interval_secs: u64) -> domain::Result<()> {
+    let config = AppConfig::default();
+
+    println!("{}", "🔄 Starting sync daemon...".bold());
+    println!("  Interval: {} seconds", interval_secs);
+    println!("  Data dir: {}", config.data_dir().display());
+    println!("  Auto-restore: enabled");
+    println!();
+
+    // Ensure directories exist
+    let storage_mgr = StorageManager::new(config.clone());
+    storage_mgr.ensure_directories()?;
+
+    let sync_service = SyncService::new(config.clone())?;
+    let restore_service = RestoreService::new(config);
+
+    loop {
+        tracing::info!("Starting sync cycle...");
+
+        // First, check if restore is needed (Cursor was cleared)
+        match restore_service.auto_restore_if_needed() {
+            Ok(true) => {
+                tracing::info!("Auto-restore completed");
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "Auto-restore check failed");
+            }
+        }
+
+        // Then sync from Cursor to local storage
+        match sync_service.sync() {
+            Ok(state) => {
+                tracing::info!(
+                    conversations = state.conversation_count,
+                    messages = state.message_count,
+                    "Sync completed successfully"
+                );
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Sync failed");
+            }
+        }
+
+        // Check and enforce storage limits
+        if let Err(e) = storage_mgr.enforce_storage_limit() {
+            tracing::warn!(error = %e, "Failed to enforce storage limits");
+        }
+
+        // Sleep until next sync
+        std::thread::sleep(Duration::from_secs(interval_secs));
+    }
 }
 
 /// Setup tracing/logging based on verbosity level.

@@ -1,0 +1,70 @@
+---
+title: "[GLOBAL] Contratos e Padrões"
+ruleType: "global"
+priority: 910
+---
+
+# Contratos Globais do Projeto
+
+## TL;DR
+- Erros tipados com `AppError` e propagação via `Result`
+- Logs estruturados com contexto (request_id, operation)
+- Config via TOML com validação fail-fast
+- Limite de 10GB para storage com rotação automática
+
+## 1) Estrutura de Erros
+
+```rust
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Database error: {message}")]
+    Database { message: String, source: Option<...> },
+    
+    #[error("Sync error: {message}")]
+    Sync { message: String },
+    
+    #[error("Config error: {message}")]
+    Config { message: String },
+    
+    #[error("IO error: {message}")]
+    Io { message: String, source: Option<...> },
+}
+```
+
+## 2) Logging
+
+- Use `tracing` para logs estruturados
+- Níveis: `error` (falhas), `warn` (degradação), `info` (operações), `debug` (detalhes)
+- Inclua contexto: operação, IDs, duração
+
+```rust
+tracing::info!(
+    operation = "sync",
+    conversations = count,
+    duration_ms = elapsed.as_millis(),
+    "Sync completed"
+);
+```
+
+## 3) Configuração
+
+- Arquivo: `~/.cursor-chat-handler/config.toml`
+- Validação na inicialização (fail-fast)
+- Defaults sensatos para tudo
+
+```toml
+[sync]
+interval_secs = 120
+enabled = true
+
+[storage]
+max_size_gb = 10
+backup_retention_days = 30
+```
+
+## 4) Limites
+
+- Storage máximo: 10GB
+- Intervalo sync: 2 minutos
+- Retenção backups: 30 dias
+- Rotação automática quando limite atingido

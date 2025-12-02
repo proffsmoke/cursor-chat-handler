@@ -6,12 +6,40 @@ use clap::{Parser, Subcommand};
 
 use crate::application::OutputFormat;
 
+const LONG_ABOUT: &str = r#"
+🤖 GUIA RÁPIDO PARA IA
+══════════════════════════════════════════════════════════════
+
+📋 RECUPERAR CONTEXTO DE CHAT ANTERIOR:
+  cursor-chat quick              # Menu com números
+  cursor-chat open 1             # Abrir última conversa
+  cursor-chat show <ID> --last 10  # Ver últimas 10 msgs
+
+💾 SALVAR CONTEXTO ATUAL:
+  cursor-chat export -c <ID> -o chat.md
+  cursor-chat export-all --limit 3
+
+🔄 AUTO-SYNC + AUTO-RESTORE:
+  cursor-chat sync start         # Iniciar daemon (salva a cada 2min)
+  cursor-chat sync restore       # Restaurar chats após limpar Cursor
+  cursor-chat sync status        # Ver status
+
+📁 VER POR PROJETO/WORKSPACE:
+  cursor-chat storage workspaces  # Listar projetos
+
+⚙️ STORAGE LOCAL (~/.cursor-chat-handler/):
+  cursor-chat storage stats      # Ver uso (limite 10GB)
+
+🔥 LIMPOU O CURSOR? Use: cursor-chat sync restore
+   Detecta e restaura automaticamente quando Cursor resetar!
+
+══════════════════════════════════════════════════════════════
+"#;
+
 /// Cursor Chat Handler - Extract and display chat history from Cursor IDE.
-///
-/// 🤖 For AI use: cursor-chat list | show <id> --last 5 | export -c <id> -o file
 #[derive(Parser, Debug)]
 #[command(name = "cursor-chat-handler")]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = LONG_ABOUT)]
 pub struct Cli {
     /// Enable verbose logging (use multiple times for more verbosity).
     #[arg(short, long, action = clap::ArgAction::Count)]
@@ -36,6 +64,10 @@ pub enum Commands {
         /// Minimum number of messages to include a conversation.
         #[arg(short, long, default_value = "1")]
         min_messages: usize,
+
+        /// Filter by workspace/project name.
+        #[arg(short, long)]
+        workspace: Option<String>,
     },
 
     /// Show a specific conversation in detail.
@@ -100,6 +132,85 @@ pub enum Commands {
         /// Conversation ID or number from quick list.
         id: String,
     },
+
+    /// Sync management commands.
+    #[command(subcommand)]
+    Sync(SyncCommands),
+
+    /// Storage management commands.
+    #[command(subcommand)]
+    Storage(StorageCommands),
+
+    /// Run as daemon (used by systemd service).
+    Daemon {
+        /// Sync interval in seconds.
+        #[arg(short, long, default_value = "120")]
+        interval: u64,
+    },
+
+    /// Restore chat history to Cursor after clearing/reset.
+    Restore {
+        /// Restore specific conversation IDs only.
+        #[arg(short, long)]
+        ids: Vec<String>,
+
+        /// Force restore even if Cursor has chats.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+/// Sync subcommands.
+#[derive(Subcommand, Debug)]
+pub enum SyncCommands {
+    /// Install and start the sync service.
+    Start,
+
+    /// Stop and disable the sync service.
+    Stop,
+
+    /// Show sync service status.
+    Status,
+
+    /// Run a sync immediately.
+    Now,
+
+    /// Show sync logs.
+    Logs {
+        /// Number of log lines to show.
+        #[arg(short, long, default_value = "50")]
+        lines: usize,
+    },
+
+    /// Uninstall the sync service.
+    Uninstall,
+
+    /// Restore chats to Cursor (when reset detected).
+    Restore {
+        /// Restore specific conversation IDs (all if not specified).
+        #[arg(short, long)]
+        ids: Vec<String>,
+
+        /// Force restore even if not needed.
+        #[arg(short, long)]
+        force: bool,
+    },
+}
+
+/// Storage subcommands.
+#[derive(Subcommand, Debug)]
+pub enum StorageCommands {
+    /// Show storage usage statistics.
+    Stats,
+
+    /// Clean up old backups and enforce storage limits.
+    Cleanup,
+
+    /// List all workspaces/projects.
+    Workspaces,
+
+    /// Show storage configuration.
+    Config,
 }
 
 impl Cli {
