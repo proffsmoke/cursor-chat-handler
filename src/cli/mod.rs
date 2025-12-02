@@ -30,8 +30,8 @@ const LONG_ABOUT: &str = r#"
 ⚙️ STORAGE LOCAL (~/.cursor-chat-handler/):
   cursor-chat storage stats      # Ver uso (limite 10GB)
 
-🔥 LIMPOU O CURSOR? Use: cursor-chat sync restore
-   Detecta e restaura automaticamente quando Cursor resetar!
+🔥 RESET COMPLETO (backup → reset → restore):
+  cursor-chat reset              # Reset trial + restaura chats
 
 ══════════════════════════════════════════════════════════════
 "#;
@@ -157,6 +157,17 @@ pub enum Commands {
         /// Force restore even if Cursor has chats.
         #[arg(long)]
         force: bool,
+    },
+
+    /// Complete Cursor reset (backup chats → reset trial → restore chats).
+    Reset {
+        /// Skip chat restore after reset.
+        #[arg(long)]
+        no_restore: bool,
+
+        /// Also clean AppImage files from Downloads.
+        #[arg(long)]
+        clean_appimage: bool,
     },
 }
 

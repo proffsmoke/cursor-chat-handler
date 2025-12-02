@@ -30,7 +30,7 @@ use application::{
 };
 use cli::{Cli, Commands, StorageCommands, SyncCommands};
 use domain::AppConfig;
-use infrastructure::{find_state_databases, SystemdService};
+use infrastructure::{find_state_databases, CursorReset, SystemdService};
 
 fn main() {
     let cli = Cli::parse();
@@ -107,6 +107,9 @@ fn run(cli: Cli) -> domain::Result<()> {
         }
         Commands::Restore { ids, force } => {
             cmd_restore(&ids, force)?;
+        }
+        Commands::Reset { no_restore, clean_appimage } => {
+            cmd_reset(no_restore, clean_appimage)?;
         }
     }
 
@@ -711,6 +714,124 @@ fn cmd_daemon(interval_secs: u64) -> domain::Result<()> {
         // Sleep until next sync
         std::thread::sleep(Duration::from_secs(interval_secs));
     }
+}
+
+/// Complete Cursor reset with backup and restore.
+fn cmd_reset(no_restore: bool, clean_appimage: bool) -> domain::Result<()> {
+    let config = AppConfig::default();
+
+    println!("{}", "🔄 CURSOR RESET".bold());
+    println!("{}", "═══════════════════════════════════════════".cyan());
+    println!();
+
+    // Step 1: Sync to ensure backup is up to date
+    println!("{}", "📦 Step 1: Backing up chats...".bold());
+    let sync_service = SyncService::new(config.clone())?;
+    match sync_service.sync() {
+        Ok(state) => {
+            println!("  {} Backup complete: {} chats, {} messages",
+                "✓".green(),
+                state.conversation_count,
+                state.message_count
+            );
+        }
+        Err(e) => {
+            println!("  {} Backup warning: {} (continuing anyway)", "⚠".yellow(), e);
+        }
+    }
+    println!();
+
+    // Step 2: Kill Cursor processes
+    println!("{}", "🔪 Step 2: Stopping Cursor...".bold());
+    let reset = CursorReset::new(clean_appimage);
+    match reset.kill_cursor() {
+        Ok(_) => println!("  {} Cursor processes terminated", "✓".green()),
+        Err(e) => println!("  {} Could not kill Cursor: {}", "⚠".yellow(), e),
+    }
+    println!();
+
+    // Step 3: Clean config directories
+    println!("{}", "🗑️  Step 3: Cleaning configuration...".bold());
+    match reset.clean_config_dirs() {
+        Ok(stats) => {
+            println!("  {} Removed {} directories", "✓".green(), stats.dirs_removed);
+            for path in &stats.paths_cleaned {
+                println!("    {} {}", "→".dimmed(), path);
+            }
+        }
+        Err(e) => println!("  {} Failed: {}", "✗".red(), e),
+    }
+    println!();
+
+    // Step 4: Clean desktop entries
+    println!("{}", "🖥️  Step 4: Cleaning desktop entries...".bold());
+    match reset.clean_desktop_entries() {
+        Ok(stats) => {
+            println!("  {} Removed {} files", "✓".green(), stats.files_removed);
+        }
+        Err(e) => println!("  {} Failed: {}", "✗".red(), e),
+    }
+    println!();
+
+    // Step 5: Clean AppImages (optional)
+    if clean_appimage {
+        println!("{}", "📦 Step 5: Cleaning AppImages...".bold());
+        match reset.clean_appimages() {
+            Ok(stats) => {
+                if stats.files_removed > 0 {
+                    println!("  {} Removed {} AppImage files", "✓".green(), stats.files_removed);
+                } else {
+                    println!("  {} No AppImages found", "ℹ".blue());
+                }
+            }
+            Err(e) => println!("  {} Failed: {}", "✗".red(), e),
+        }
+        println!();
+    }
+
+    // Step 6: Reset machine ID
+    println!("{}", "🔑 Step 6: Resetting machine ID...".bold());
+    println!("  {} This requires sudo password", "ℹ".blue());
+    match reset.reset_machine_id() {
+        Ok(result) => {
+            println!("  {} New machine ID: {}", "✓".green(), &result.new_id[..8]);
+        }
+        Err(e) => {
+            println!("  {} Failed: {}", "✗".red(), e);
+            println!("  {} You may need to run with sudo", "💡".yellow());
+        }
+    }
+    println!();
+
+    // Step 7: Restore chats
+    if !no_restore {
+        println!("{}", "📥 Step 7: Restoring chats...".bold());
+        let restore_service = RestoreService::new(config);
+        match restore_service.restore_all() {
+            Ok(result) => {
+                println!("  {} Restored {} chats, {} messages",
+                    "✓".green(),
+                    result.restored_conversations,
+                    result.restored_messages
+                );
+            }
+            Err(e) => {
+                println!("  {} Restore failed: {}", "⚠".yellow(), e);
+                println!("  {} Run 'cursor-chat sync restore' later", "💡".blue());
+            }
+        }
+        println!();
+    }
+
+    // Done
+    println!("{}", "═══════════════════════════════════════════".cyan());
+    println!("{}", "✨ RESET COMPLETE!".green().bold());
+    println!();
+    println!("  {} Reopen Cursor to start fresh", "→".cyan());
+    println!("  {} Your chats have been preserved", "→".cyan());
+    println!();
+
+    Ok(())
 }
 
 /// Setup tracing/logging based on verbosity level.
